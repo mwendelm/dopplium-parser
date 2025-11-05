@@ -127,8 +127,8 @@ def parse_dopplium_raw(
         Cptx_hdr = int(BH.n_chirps_per_frame)   # typically "per TX"
         nRx = int(BH.n_receivers)
         nTx = int(BH.n_transmitters)
-        if BH.data_order != 0:
-            raise NotImplementedError("Only data_order=0 (ByChannel) is supported.")
+        if BH.data_order not in (0, 1):
+            raise NotImplementedError(f"Unsupported data_order={BH.data_order}. Only 0 (ByChannel) and 1 (ByChirp) are supported.")
         if BH.sample_format != 0:
             raise NotImplementedError("Only sample_format=0 (16-bit aligned) is supported.")
         if BH.bits_per_sample != 16:
@@ -216,15 +216,35 @@ def parse_dopplium_raw(
                 raise EOFError(f"Unexpected EOF while reading frame {fi+1} payload.")
             raw = np.frombuffer(buf, dtype=dt_int16, count=n_int16_this)
 
+            # Normalize block ordering to (block_len_ints, nRx, Ctot_hdr)
+            n_blocks = nRx * Ctot_hdr
+            if raw.size != n_blocks * block_len_ints:
+                raise ValueError(f"Frame {fi+1}: payload size does not match expected nBlocks*blockLenInts.")
+            
+            if BH.data_order == 0:
+                # ByChannel: on-wire grouping is [for c in Ctot, for rx in nRx] contiguous blocks
+                # MATLAB: reshape(raw, blockLenInts, nRx, Ctot) with column-major (Fortran order)
+                # Equivalent with C-order: reverse dimensions then transpose
+                buf_reshaped = raw.reshape((Ctot_hdr, nRx, block_len_ints))
+                buf_reshaped = np.transpose(buf_reshaped, (2, 1, 0))  # -> (blockLen, nRx, Ctot)
+            elif BH.data_order == 1:
+                # ByChirp: on-wire grouping is [for rx in nRx, for c in Ctot] contiguous blocks
+                # MATLAB: reshape(raw, nRx, blockLenInts, Ctot) then permute([2,1,3])
+                # Equivalent with C-order: reverse dimensions then combine transposes
+                buf_reshaped = raw.reshape((Ctot_hdr, block_len_ints, nRx))
+                buf_reshaped = np.transpose(buf_reshaped, (1, 2, 0))  # -> (blockLen, nRx, Ctot)
+            else:
+                raise ValueError(f"Unsupported data_order={BH.data_order} (should have been caught earlier).")
+
             # Loop over "total on wire" chirps
-            idx = 0
             for c in range(Ctot_hdr):
                 tx_idx = (c % max(nTx, 1))
                 c_tx = c // max(nTx, 1)  # 0..ceil(Ctot/nTx)-1
                 for rx in range(nRx):
-                    seg = raw[idx: idx + block_len_ints]
+                    seg = buf_reshaped[:, rx, c]
                     if seg.size != block_len_ints:
-                        raise ValueError(f"Frame {fi+1}: payload indexing overrun at chirp {c}, rx {rx}.")
+                        raise ValueError(f"Frame {fi+1}: payload indexing error at chirp {c}, rx {rx}. "
+                                       f"Expected {block_len_ints} elements, got {seg.size}.")
 
                     if BH.sample_type == 0:
                         # REAL
@@ -251,12 +271,13 @@ def parse_dopplium_raw(
                                 ch_out = tx_idx * nRx + rx
                                 data[:, c_tx, ch_out, fi] = z.real.astype(np.int16)
 
-                    idx += block_len_ints
-
-            if idx != n_int16_this:
-                # Not fatal; header is ground truth, but we warn.
+            # Validate that we processed the expected amount of data
+            expected_int16 = n_blocks * block_len_ints
+            if expected_int16 != n_int16_this:
                 if verbose:
-                    print(f"Warning: frame {fi+1} consumed {idx} int16, header says {n_int16_this}.")
+                    print(f"Warning: frame {fi+1} expected to process {expected_int16} int16 "
+                          f"(nRx={nRx} * Ctot={Ctot_hdr} * blockLen={block_len_ints}), "
+                          f"but header says {n_int16_this}.")
 
         headers = {
             "file": FH,

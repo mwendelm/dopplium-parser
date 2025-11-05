@@ -157,9 +157,9 @@ for f = 1:nFrames
         case 0 % ByChannel: on-wire grouping is [for c=1..Ctot, for rx=1..nRx] contiguous blocks
             buf = reshape(raw, blockLenInts, nRx, Ctot); % (ints, rx, c)
 
-        case 1 % ByChirp: typically same linearization as above in many loggers
-            % If future variants permute differently, adapt here.
-            buf = reshape(raw, blockLenInts, nRx, Ctot); % (ints, rx, c)
+        case 1 % ByChirp: on-wire grouping is [for rx=1..nRx, for c=1..Ctot] contiguous blocks
+            buf = reshape(raw, nRx, blockLenInts, Ctot); % (ints, c, rx)
+            buf = permute(buf, [2, 1, 3]); % reorder to (ints, rx, c) for uniform processing
 
         otherwise
             error('Unsupported data_order=%d (should have been caught earlier).', BH.data_order);
