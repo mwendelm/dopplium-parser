@@ -17,7 +17,7 @@ function [data, headers] = parseDoppliumRaw(filename, opts)
 %   Notes:
 %   - n_chirps_per_frame in the body header is CHIRPS PER TX.
 %     Total chirps on the wire per frame = nTx * n_chirps_per_frame (TX interleaved).
-%   - Supported payload order: data_order == 0 (ByChannel).
+%   - Supported payload order: data_order == 0 (ByChannel) and data_order == 1 (ByChirp).
 %   - Supported packing: sample_format == 0 (16-bit aligned int16 containers).
 
 if nargin < 2, opts = struct; end
@@ -62,22 +62,22 @@ end
 % Dimensions & types (trust header bytes for sizing)
 % -------------------------------------------------------------------------
 S      = double(BH.n_samples_per_chirp);
-Cptx   = double(BH.n_chirps_per_frame);   % chirps per TX
+Cptx   = double(BH.n_chirps_per_frame); % chirps per TX
 nRx    = double(BH.n_receivers);
 nTx    = double(BH.n_transmitters);
-Ctot   = Cptx * max(nTx,1);               % total chirps on wire (TX interleaved)
+Ctot   = Cptx * max(nTx,1);              % total chirps on wire (TX interleaved)
 bytesPerFrame = double(BH.bytes_per_frame);
 
-if BH.data_order ~= 0
-    error('This parser currently supports data_order=0 (ByChannel) only.');
+if ~(BH.data_order == 0 || BH.data_order == 1)
+    error('Unsupported data_order=%d. Only 0 (ByChannel) and 1 (ByChirp) are supported.', BH.data_order);
 end
 assert(BH.sample_format == 0, 'Only 16-bit aligned samples supported (sample_format==0).');
 assert(double(BH.bits_per_sample) == 16, 'Expected 16 bits per sample.');
 
 % Header-guided sizing
-bytesPerElement   = double(BH.bytes_per_element);  % should be 2 if int16 containers
-bytesPerSample    = double(BH.bytes_per_sample);   % bytes per (real or complex) sample
-intsPerElement    = bytesPerElement / 2;           % normally 1
+bytesPerElement   = double(BH.bytes_per_element);     % should be 2 if int16 containers
+bytesPerSample    = double(BH.bytes_per_sample);      % bytes per (real or complex) sample
+intsPerElement    = bytesPerElement / 2;              % normally 1
 elementsPerSample = bytesPerSample / bytesPerElement; % 1 for real, 2 for complex IQ
 if abs(elementsPerSample - round(elementsPerSample)) > 1e-9
     warning('Non-integer elementsPerSample detected from header (%.3f). Rounding.', elementsPerSample);
@@ -141,23 +141,39 @@ for f = 1:nFrames
         error('Unexpected EOF while reading frame %d payload.', f);
     end
 
-    % Theoretical count (for info/warning only)
+    % Theoretical count (for info only)
     nInt16_theo = blockLenInts * nRx * Ctot;
     if nInt16_theo ~= nInt16_hdr
         warning(['Frame %d: header bytes imply %d int16, but theoretical calc suggests %d. ' ...
                  'Proceeding with header-derived sizing.'], f, nInt16_hdr, nInt16_theo);
     end
 
-    idx = 1;
+    % ---- Normalize block ordering to (blockLenInts, rx, c) ----
+    nBlocks = nRx * Ctot;
+    assert(numel(raw) == nBlocks * blockLenInts, ...
+        'Frame %d: payload size does not match expected nBlocks*blockLenInts.', f);
+
+    switch BH.data_order
+        case 0 % ByChannel: on-wire grouping is [for c=1..Ctot, for rx=1..nRx] contiguous blocks
+            buf = reshape(raw, blockLenInts, nRx, Ctot); % (ints, rx, c)
+
+        case 1 % ByChirp: typically same linearization as above in many loggers
+            % If future variants permute differently, adapt here.
+            buf = reshape(raw, blockLenInts, nRx, Ctot); % (ints, rx, c)
+
+        otherwise
+            error('Unsupported data_order=%d (should have been caught earlier).', BH.data_order);
+    end
+
+    % Populate output from buf(:, rx, c)
     if BH.sample_type == 0
-        % REAL: elementsPerSample should be 1 -> blockLenInts = S
+        % ------------------------ REAL ------------------------
+        % elementsPerSample should be 1 -> blockLenInts = S
         for c = 1:Ctot
             tx   = mod(c-1, nTx) + 1;
             c_tx = floor((c-1)/max(nTx,1)) + 1;
             for rx = 1:nRx
-                seg = raw(idx : idx + blockLenInts - 1);
-                idx = idx + blockLenInts;
-
+                seg = buf(:, rx, c); % int16 column
                 if nTx == 1
                     data(:, c_tx, rx, f) = cast(seg, outClass);
                 else
@@ -168,16 +184,13 @@ for f = 1:nFrames
         end
 
     else
-        % COMPLEX: elementsPerSample should be 2 -> blockLenInts = 2*S
+        % ------------------------ COMPLEX ------------------------
+        % elementsPerSample should be 2 -> blockLenInts = 2*S
         for c = 1:Ctot
             tx   = mod(c-1, nTx) + 1;
             c_tx = floor((c-1)/max(nTx,1)) + 1;
             for rx = 1:nRx
-                seg = raw(idx : idx + blockLenInts - 1);
-                idx = idx + blockLenInts;
-
-                % seg is a vector of int16 of length elementsPerSample*intsPerElement*S
-                % For complex we expect elementsPerSample==2 and intsPerElement==1
+                seg = buf(:, rx, c); % int16 column of length elementsPerSample*S
                 if elementsPerSample == 2
                     z = decodeIQ(seg, S, BH.iq_order, opts); % complex vector (Sx1)
                 else
@@ -205,11 +218,6 @@ for f = 1:nFrames
             end
         end
     end
-
-    % Safety: index should land exactly at nInt16_hdr + 1
-    if idx ~= nInt16_hdr + 1
-        warning('Frame %d parsing ended at idx=%d, expected %d. Check header fields.', f, idx, nInt16_hdr+1);
-    end
 end
 
 % -------------------------------------------------------------------------
@@ -229,11 +237,9 @@ if opts.verbose
         fprintf('Single-TX: total chirps per frame=%d\n', Cptx);
     end
 end
-
 end
 
 % ====================== Helpers ======================
-
 function FH = readFileHeader(fid, machinefmt)
     FH.magic                   = char(fread(fid, [1,4], '*char'));
     FH.version                 = fread(fid, 1, 'uint16', 0, machinefmt);
@@ -266,7 +272,7 @@ function BH = readBodyHeader(fid, machinefmt)
     BH.n_receivers             = fread(fid, 1, 'uint16', 0, machinefmt);
     BH.n_transmitters          = fread(fid, 1, 'uint16', 0, machinefmt);
     BH.sample_type             = fread(fid, 1, 'uint8',  0, machinefmt); % 0=real, 1=complex/IQ
-    BH.data_order              = fread(fid, 1, 'uint8',  0, machinefmt); % 0=ByChannel
+    BH.data_order              = fread(fid, 1, 'uint8',  0, machinefmt); % 0=ByChannel, 1=ByChirp
     BH.iq_order                = fread(fid, 1, 'uint8',  0, machinefmt); % 0..3
     BH.sample_format           = fread(fid, 1, 'uint8',  0, machinefmt); % 0=16b aligned
     BH.reserved2               = fread(fid, 1, 'uint16', 0, machinefmt);
@@ -287,7 +293,7 @@ function BH = readBodyHeader(fid, machinefmt)
     BH.max_velocity_mps        = fread(fid, 1, 'single', 0, machinefmt);
     BH.range_resolution_m      = fread(fid, 1, 'single', 0, machinefmt);
     BH.velocity_resolution_mps = fread(fid, 1, 'single', 0, machinefmt);
-    BH.reserved3              = fread(fid, 52, '*uint8', 0, machinefmt);
+    BH.reserved3               = fread(fid, 52, '*uint8', 0, machinefmt);
 end
 
 function FR = readFrameHeader(fid, machinefmt)
@@ -412,4 +418,3 @@ end
 function y = tern(cond, a, b)
     if cond, y = a; else, y = b; end
 end
-
