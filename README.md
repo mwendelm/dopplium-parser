@@ -8,7 +8,7 @@ Parsers for Dopplium radar data formats (MATLAB & Python).
 
 **Python**: 
 ```bash
-pip install numpy matplotlib
+pip install -e .
 ```
 
 ## Usage
@@ -20,7 +20,7 @@ pip install numpy matplotlib
 
 **Python**:
 ```python
-from parse_dopplium_raw import parse_dopplium_raw
+from dopplium_parser import parse_dopplium_raw
 data, headers = parse_dopplium_raw('file.bin')
 ```
 
@@ -41,4 +41,4 @@ Returns data shaped `[samples, chirpsPerTx, channels, frames]`:
 
 ## Examples
 
-See `matlab/exampleParse.m` and `python/example_parse.py` for complete examples with 2D FFT processing and visualization.
+See `matlab/exampleParse.m` and `dopplium_parser/example_parse.py` for complete examples with 2D FFT processing and visualization.

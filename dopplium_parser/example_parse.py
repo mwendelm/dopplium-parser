@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from parse_dopplium_raw import parse_dopplium_raw
+from dopplium_parser import parse_dopplium_raw
 
 def mag2db(x: np.ndarray, eps: float = 1e-12) -> np.ndarray:
     """Magnitude to dB, safe for zeros."""
