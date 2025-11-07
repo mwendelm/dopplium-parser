@@ -13,7 +13,7 @@ else
     error("No idea what operating system")
 end
 %%
-file="20251022_123849_122_breathing_sitting_1_Node 122.bin";
+file="20251022_123849_12_breathing_sitting_1_Node 121.bin";
 folder=fullfile(folder,"Dopplium_Recordings","2025-11-05",file);
 
 % Example usage of parseDoppliumRaw
@@ -52,8 +52,8 @@ ylabel('Range bins');
 colorbar;
 title(sprintf('2D FFT (frame %d, channel %d)', frameIdx, chIdx));
 %% range plot
-chirpIdx=50;
-sub_data=data(:,:,:,40:500);
+chirpIdx=20;
+sub_data=data(:,:,:,50:end-50);
 decluttered_data=sub_data-mean(sub_data,4);
 
 MTI=windowed_fft(decluttered_data,1,128,1);
