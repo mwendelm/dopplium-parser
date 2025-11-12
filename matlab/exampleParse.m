@@ -1,5 +1,5 @@
 clear
-close all
+%close all
 %%
 
 if ismac
@@ -12,8 +12,10 @@ else
     error("No idea what operating system")
 end
 %%
-file="20251022_123849_120_breathing_sitting_1_Node 120.bin";
-folder=fullfile(folder,"Dopplium_Recordings","2025-11-05",file);
+file="20251022_132135_120_sitting_3_Node 120.bin";
+%file="20251022_122651_120_target_at_minus_50cm_Node 120.bin";
+folder=fullfile(folder,"Dopplium_Recordings","2025-11-07",file);
+%folder=fullfile(folder,"measurement_Rutkay","Node120",file);
 
 % Example usage of parseDoppliumRaw
 [data, hdr] = parseDoppliumRaw(folder);
@@ -24,7 +26,7 @@ fprintf('Parsed data shape: [samples=%d, chirpsPerTx=%d, channels=%d, frames=%d]
     dims(1), dims(2), dims(3), dims(4));
 
 % --- Select one channel and one frame ---
-frameIdx = 1;  % first frame
+frameIdx = 530;  % first frame
 chIdx    = 1;  % first channel (if multi-TX: linear index tx*nRx+rx)
 slab = data(:,:,chIdx,frameIdx);  % shape [samples, chirpsPerTx]
 
@@ -51,11 +53,12 @@ ylabel('Range bins');
 colorbar;
 title(sprintf('2D FFT (frame %d, channel %d)', frameIdx, chIdx));
 %% range plot
-chirpIdx=50;
-sub_data=data(:,:,:,1:end);
-decluttered_data=sub_data;%-mean(sub_data,4);
+chirpIdx=40;
+%data(6:8,:,:,:)=0;
+sub_data=data(:,:,:,:);
+decluttered_data=sub_data-mean(sub_data,4);
 
-MTI=windowed_fft(decluttered_data,1,128,1);
+%MTI=windowed_fft(decluttered_data,1,80,1);
 MTI=fft(decluttered_data);
 X_db = mag2db(abs(MTI));
 
@@ -65,4 +68,4 @@ axis xy;            % ensure origin is lower-left like Python's origin="lower"
 xlabel('Frames');
 ylabel('Range bins');
 colorbar;
-title(sprintf(' FFT (chirp %d, channel %d)', chirpIdx, chIdx));
+title(sprintf('Dopplium FFT (chirp %d, channel %d)', chirpIdx, chIdx));

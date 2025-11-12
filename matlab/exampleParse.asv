@@ -1,20 +1,21 @@
 clear
-close all
+%close all
 %%
 
 if ismac
     folder="/Users/mareike/Library/CloudStorage/OneDrive-DelftUniversityofTechnology";
-    addpath("../Processing_Code_Dataset_2025/Mac_MatlabFunctions/")
-    addpath("../Processing_Code_Dataset_2025/MatlabFunctions/")
+    addpath(genpath("../../Processing_Code_Dataset_2025"))
 elseif ispc
-    folder="M:\ewi\me\MS3\MS3-Shared\DataMareike\Dataset2025";
-    addpath("../Processing_Code_Dataset_2025/MatlabFunctions/")
+    folder="C:\Users\mwendelmuth\OneDrive - Delft University of Technology";
+    addpath(genpath("../../Processing_Code_Dataset_2025"))
 else
     error("No idea what operating system")
 end
 %%
-file="20251022_123849_12_breathing_sitting_1_Node 121.bin";
-folder=fullfile(folder,"Dopplium_Recordings","2025-11-05",file);
+file="20251022_132135_120_sitting_3_Node 120.bin";
+%file="20251022_122651_120_target_at_minus_50cm_Node 120.bin";
+folder=fullfile(folder,"Dopplium_Recordings","2025-11-07",file);
+%folder=fullfile(folder,"measurement_Rutkay","Node120",file);
 
 % Example usage of parseDoppliumRaw
 [data, hdr] = parseDoppliumRaw(folder);
@@ -52,17 +53,19 @@ ylabel('Range bins');
 colorbar;
 title(sprintf('2D FFT (frame %d, channel %d)', frameIdx, chIdx));
 %% range plot
-chirpIdx=20;
-sub_data=data(:,:,:,50:end-50);
+chirpIdx=40;
+%data(6:8,:,:,:)=0;
+sub_data=data(:,:,:,:);
 decluttered_data=sub_data-mean(sub_data,4);
 
-MTI=windowed_fft(decluttered_data,1,128,1);
+MTI=windowed_fft(decluttered_data,1,80,1);
+%MTI=fft(decluttered_data);
 X_db = mag2db(abs(MTI));
 
 figure;
 imagesc(squeeze(X_db(:,chirpIdx,chIdx,:)));
-axis xy;            % ensure origin is lower-left like Python's origin="lower"
+%axis xy;            % ensure origin is lower-left like Python's origin="lower"
 xlabel('Frames');
 ylabel('Range bins');
 colorbar;
-title(sprintf('2D FFT (chirp %d, channel %d)', chirpIdx, chIdx));
+title(sprintf('Dopplium FFT (chirp %d, channel %d)', chirpIdx, chIdx));
