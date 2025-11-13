@@ -12,23 +12,26 @@ else
     error("No idea what operating system")
 end
 %%
-file="20251022_132135_120_sitting_3_Node 120.bin";
+file="20251022_143100_122_empty2.bin";
+file2="20251022_135106_122_corner_2_7m.bin";
 %file="20251022_122651_120_target_at_minus_50cm_Node 120.bin";
-folder=fullfile(folder,"Dopplium_Recordings","2025-11-07",file);
+folder_empty=fullfile(folder,"Dopplium_Recordings","2025-11-12","Node122",file);
+folder2=fullfile(folder,"Dopplium_Recordings","2025-11-12","Node122",file2);
 %folder=fullfile(folder,"measurement_Rutkay","Node120",file);
 
 % Example usage of parseDoppliumRaw
-[data, hdr] = parseDoppliumRaw(folder);
+[data_empty, hdr] = parseDoppliumRaw(folder_empty);
+[data, hdr] = parseDoppliumRaw(folder2);
 %%
 % Data shape: [samples, chirpsPerTx, channels, frames]
-dims = size(data);
+dims = size(data_empty);
 fprintf('Parsed data shape: [samples=%d, chirpsPerTx=%d, channels=%d, frames=%d]\n', ...
     dims(1), dims(2), dims(3), dims(4));
 
 % --- Select one channel and one frame ---
-frameIdx = 530;  % first frame
+frameIdx = 100;  % first frame
 chIdx    = 1;  % first channel (if multi-TX: linear index tx*nRx+rx)
-slab = data(:,:,chIdx,frameIdx);  % shape [samples, chirpsPerTx]
+slab = data_empty(:,:,chIdx,frameIdx);  % shape [samples, chirpsPerTx]
 
 % --- Optional windowing ---
 % win_r = hann(size(slab,1));
@@ -54,9 +57,10 @@ colorbar;
 title(sprintf('2D FFT (frame %d, channel %d)', frameIdx, chIdx));
 %% range plot
 chirpIdx=40;
-%data(6:8,:,:,:)=0;
+%data_empty(6:8,:,:,:)=0;
 sub_data=data(:,:,:,:);
-decluttered_data=sub_data-mean(sub_data,4);
+decluttered_data=data-mean(data_empty,4);
+%decluttered_data=sub_data;%-mean(sub_data,4);
 
 %MTI=windowed_fft(decluttered_data,1,80,1);
 MTI=fft(decluttered_data);
