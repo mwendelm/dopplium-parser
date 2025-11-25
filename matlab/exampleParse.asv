@@ -12,23 +12,30 @@ else
     error("No idea what operating system")
 end
 %%
-file="20251022_132135_120_sitting_3_Node 120.bin";
+%file="20251022_143100_122_empty2.bin";
+file_right="rightNode.bin";
+%file_left="120_empty.bin";
 %file="20251022_122651_120_target_at_minus_50cm_Node 120.bin";
-folder=fullfile(folder,"Dopplium_Recordings","2025-11-07",file);
+%folder_empty=fullfile(folder,"Dataset_2025","2025-11-12","Node122",file);
+
+folder_right=fullfile(folder,"Dataset_2025","24-11-2025",file_right);
+%folder_left=fullfile(folder,"Dataset_2025","24-11-2025",file_left);
 %folder=fullfile(folder,"measurement_Rutkay","Node120",file);
 
 % Example usage of parseDoppliumRaw
-[data, hdr] = parseDoppliumRaw(folder);
+%[data_empty, hdr] = doppliumParser(folder_empty);
+%[data_left, hdr_left] = doppliumParser(folder_left); 
+[data_right, hdr_right] = doppliumParser(folder_right); 
 %%
 % Data shape: [samples, chirpsPerTx, channels, frames]
-dims = size(data);
+dims = size(data_right);
 fprintf('Parsed data shape: [samples=%d, chirpsPerTx=%d, channels=%d, frames=%d]\n', ...
     dims(1), dims(2), dims(3), dims(4));
 
 % --- Select one channel and one frame ---
 frameIdx = 100;  % first frame
 chIdx    = 1;  % first channel (if multi-TX: linear index tx*nRx+rx)
-slab = data(:,:,chIdx,frameIdx);  % shape [samples, chirpsPerTx]
+slab = data_right(:,:,chIdx,frameIdx);  % shape [samples, chirpsPerTx]
 
 % --- Optional windowing ---
 % win_r = hann(size(slab,1));
@@ -54,18 +61,72 @@ colorbar;
 title(sprintf('2D FFT (frame %d, channel %d)', frameIdx, chIdx));
 %% range plot
 chirpIdx=40;
-%data(6:8,:,:,:)=0;
-sub_data=data(:,:,:,:);
-decluttered_data=sub_data;%-mean(sub_data,4);
+%data_empty(6:8,:,:,:)=0;
+sub_data=data_right(:,:,:,:);
+decluttered_data=data_right(1:75,:,:,300:400);%-mean(data_right,[4]);
+%decluttered_data=sub_data;%-mean(sub_data,4);
 
-%MTI=windowed_fft(decluttered_data,1,80,1);
-MTI=fft(decluttered_data);
+MTI=windowed_fft(decluttered_data,1,256,1);
+%MTI=fft(decluttered_data);
 X_db = mag2db(abs(MTI));
 
 figure;
-imagesc(squeeze(X_db(:,chirpIdx,chIdx,:)));
+imagesc([],linspace(0,12,256),squeeze(X_db(:,chirpIdx,chIdx,:)));
 axis xy;            % ensure origin is lower-left like Python's origin="lower"
 xlabel('Frames');
 ylabel('Range bins');
 colorbar;
 title(sprintf('Dopplium FFT (chirp %d, channel %d)', chirpIdx, chIdx));
+
+%% beamforming
+subcube=MTI(1:100,:,:,300:400);
+cube_pattern=zeros([2,8,size(subcube,1),size(subcube,2),size(subcube,4)]);
+cube_pattern(2,1,:,:,:)=squeeze(subcube(:,:,1,:));
+cube_pattern(2,2,:,:,:)=squeeze(subcube(:,:,2,:));
+cube_pattern(2,3,:,:,:)=squeeze(subcube(:,:,3,:));
+cube_pattern(2,4,:,:,:)=squeeze(subcube(:,:,4,:));
+cube_pattern(2,5,:,:,:)=squeeze(subcube(:,:,5,:));
+cube_pattern(2,6,:,:,:)=squeeze(subcube(:,:,6,:));
+cube_pattern(2,7,:,:,:)=squeeze(subcube(:,:,7,:));
+cube_pattern(2,8,:,:,:)=squeeze(subcube(:,:,8,:));
+
+cube_pattern(1,3,:,:,:)=squeeze(subcube(:,:,9,:));
+cube_pattern(1,4,:,:,:)=squeeze(subcube(:,:,10,:));
+cube_pattern(1,5,:,:,:)=squeeze(subcube(:,:,11,:));
+cube_pattern(1,6,:,:,:)=squeeze(subcube(:,:,12,:));
+
+azim_cube=fftshift(windowed_fft(cube_pattern,2,32,0),2); %azimuth
+elev_cube=fftshift(windowed_fft(cube_pattern,1,16,0),1); %elevation
+
+
+%% azim map
+figure
+imagesc([],[],squeeze(mag2db(abs(azim_cube(2,:,:,40,20)))))
+xlabel('Range bin')
+ylabel('Azim (au)')
+
+
+%% for one frame
+cube_pattern=zeros([2,8,size(subcube,1),size(subcube,2)]);
+cube_pattern(2,1,:,:)=squeeze(subcube(:,:,1));
+cube_pattern(2,2,:,:)=squeeze(subcube(:,:,2));
+cube_pattern(2,3,:,:)=squeeze(subcube(:,:,3));
+cube_pattern(2,4,:,:)=squeeze(subcube(:,:,4));
+cube_pattern(2,5,:,:)=squeeze(subcube(:,:,9));
+cube_pattern(2,6,:,:)=squeeze(subcube(:,:,10));
+cube_pattern(2,7,:,:)=squeeze(subcube(:,:,11));
+cube_pattern(2,8,:,:)=squeeze(subcube(:,:,12));
+
+cube_pattern(1,3,:,:)=squeeze(subcube(:,:,5));
+cube_pattern(1,4,:,:)=squeeze(subcube(:,:,6));
+cube_pattern(1,5,:,:)=squeeze(subcube(:,:,7));
+cube_pattern(1,6,:,:)=squeeze(subcube(:,:,8));
+
+azim_cube=fftshift(windowed_fft(cube_pattern,2,32,0),2); %azimuth
+angle_cube=fftshift(windowed_fft(azim_cube,1,16,0),1); %elevation
+
+figure
+imagesc([],[],squeeze(mag2db(abs(angle_cube(:,:,27,40)))))
+xlabel('Range bin')
+ylabel('Azim (au)')
+colorbar
