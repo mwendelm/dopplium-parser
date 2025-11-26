@@ -13,12 +13,12 @@ else
 end
 %%
 %file="20251022_143100_122_empty2.bin";
-file_right="20251124_160749_2-2_activity1_leftNode.bin";
+file_right="20251124_154244_2-3_leftNode.bin";
 file_empty="20251124_154101_empty_leftNode_leftNode.bin";
 %file="20251022_122651_120_target_at_minus_50cm_Node 120.bin";
 %folder_empty=fullfile(folder,"Dataset_2025","2025-11-12","Node122",file);
 
-folder_right=fullfile(folder,"Dataset_2025","24-11-2025","trial_data","leftNode",file_right);
+folder_right=fullfile(folder,"Dataset_2025","24-11-2025","calibration","leftNode",file_right);
 folder_empty=fullfile(folder,"Dataset_2025","24-11-2025","calibration","leftNode",file_empty);
 %folder=fullfile(folder,"measurement_Rutkay","Node120",file);
 
@@ -63,7 +63,7 @@ title(sprintf('2D FFT (frame %d, channel %d)', frameIdx, chIdx));
 chirpIdx=40;
 %data_empty(6:8,:,:,:)=0;
 %sub_data=data_right(:,:,:,:);
-decluttered_data=data_right(1:75,:,:,400:500)-mean(data_empty(1:75,:,:,:),[4]);
+decluttered_data=data_right(1:75,:,:,:)-mean(data_empty(1:75,:,:,:),[4]);
 %decluttered_data=sub_data;%-mean(sub_data,4);
 
 MTI=windowed_fft(decluttered_data,1,256,1);
