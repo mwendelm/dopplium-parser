@@ -8,9 +8,7 @@ function [data, headers] = parseADCData(fid, FH, machinefmt, filename, opts)
 %     machinefmt : endianness ('ieee-le' or 'ieee-be')
 %     filename   : file path (for size calculation)
 %     opts       : options struct with fields:
-%                  .maxFrames, .cast, .returnComplex, .verbose,
-%                  .skipPayloadMismatch, .resyncOnMismatch,
-%                  .resyncMaxBytes, .resyncChunkBytes
+%                  .maxFrames, .cast, .returnComplex, .verbose
 %
 %   OUTPUTS
 %     data    : array shaped [samples, chirpsPerTx, channel, frame]
@@ -22,19 +20,6 @@ function [data, headers] = parseADCData(fid, FH, machinefmt, filename, opts)
 BH = readBodyHeader(fid, machinefmt);
 assert(BH.body_header_size >= 192, 'Unexpected body_header_size (BH).');
 assert(BH.frame_header_size >= 24, 'Unexpected frame_header_size (BH).');
-
-if ~isfield(opts, 'skipPayloadMismatch')
-    opts.skipPayloadMismatch = true;
-end
-if ~isfield(opts, 'resyncOnMismatch')
-    opts.resyncOnMismatch = true;
-end
-if ~isfield(opts, 'resyncMaxBytes')
-    opts.resyncMaxBytes = [];
-end
-if ~isfield(opts, 'resyncChunkBytes')
-    opts.resyncChunkBytes = 65536;
-end
 
 if opts.verbose
     printHeaderSummary(FH, BH);
@@ -49,9 +34,6 @@ nRx    = double(BH.n_receivers);
 nTx    = double(BH.n_transmitters);
 Ctot   = Cptx * max(nTx,1);              % total chirps on wire (TX interleaved)
 bytesPerFrame = double(BH.bytes_per_frame);
-if isempty(opts.resyncMaxBytes) || ~isfinite(opts.resyncMaxBytes) || opts.resyncMaxBytes <= 0
-    opts.resyncMaxBytes = bytesPerFrame * 4;
-end
 
 if ~(BH.data_order == 0 || BH.data_order == 1)
     error('Unsupported data_order=%d. Only 0 (ByChannel) and 1 (ByChirp) are supported.', BH.data_order);
@@ -74,8 +56,7 @@ blockLenInts = S * elementsPerSample * intsPerElement;
 
 % Determine number of frames from file size
 fileInfo = dir(filename);
-fileSize = fileInfo.bytes;
-bytesAfterHeaders = fileSize - FH.file_header_size - BH.body_header_size;
+bytesAfterHeaders = fileInfo.bytes - FH.file_header_size - BH.body_header_size;
 bytesPerUnit = BH.frame_header_size + bytesPerFrame;
 nFramesTotal = floor(bytesAfterHeaders / bytesPerUnit);
 nFrames = min(nFramesTotal, opts.maxFrames);
@@ -112,48 +93,10 @@ fseek(fid, FH.file_header_size + BH.body_header_size, 'bof');
 frames = repmat(emptyFrameHeader(), nFrames, 1);
 
 for f = 1:nFrames
-    posBefore = ftell(fid);
-    try
-        FR = readFrameHeader(fid, machinefmt);
-    catch ME
-        if opts.skipPayloadMismatch && opts.resyncOnMismatch
-            fseek(fid, posBefore, 'bof');
-            [found, newPos] = resyncToNextFrame(fid, bytesPerFrame, BH.frame_header_size, fileSize, machinefmt, opts);
-            if found
-                warning('Frame %d invalid frame magic. Resynced to next frame header at byte %d.', ...
-                        f, newPos);
-                continue
-            end
-        end
-        rethrow(ME);
-    end
+    FR = readFrameHeader(fid, machinefmt);
     frames(f) = FR;
 
     if FR.frame_payload_size ~= bytesPerFrame
-        if opts.skipPayloadMismatch
-            if opts.resyncOnMismatch
-                [found, newPos] = resyncToNextFrame(fid, bytesPerFrame, BH.frame_header_size, fileSize, machinefmt, opts);
-                if found
-                    warning(['Frame %d payload size mismatch: header=%d, expected=%d. ' ...
-                             'Resynced to next frame header at byte %d.'], ...
-                            f, FR.frame_payload_size, bytesPerFrame, newPos);
-                    continue
-                end
-                warning(['Frame %d payload size mismatch: header=%d, expected=%d. ' ...
-                         'Resync failed; skipping payload size and continuing.'], ...
-                        f, FR.frame_payload_size, bytesPerFrame);
-            else
-                warning(['Frame %d payload size mismatch: header=%d, expected=%d. ' ...
-                         'Skipping payload and continuing.'], ...
-                        f, FR.frame_payload_size, bytesPerFrame);
-            end
-            status = fseek(fid, FR.frame_payload_size, 'cof');
-            if status ~= 0
-                error('Frame %d: failed to skip payload (%d bytes).', ...
-                      f, FR.frame_payload_size);
-            end
-            continue
-        end
         error('Frame %d payload size mismatch: header=%d, expected=%d', ...
               f, FR.frame_payload_size, bytesPerFrame);
     end
@@ -333,101 +276,6 @@ function s = emptyFrameHeader()
         'frame_timestamp_utc_ticks',0, ...
         'frame_number',             0, ...
         'frame_payload_size',       0);
-end
-
-function [found, newPos] = resyncToNextFrame(fid, bytesPerFrame, frameHeaderSize, fileSize, machinefmt, opts)
-    startPos = ftell(fid);
-    maxBytes = opts.resyncMaxBytes;
-    if isempty(maxBytes) || ~isfinite(maxBytes) || maxBytes <= 0
-        maxBytes = bytesPerFrame * 4;
-    end
-    chunkBytes = opts.resyncChunkBytes;
-    if isempty(chunkBytes) || chunkBytes < 256
-        chunkBytes = 65536;
-    end
-
-    pattern = uint8('FRME');
-    searchPos = startPos;
-    found = false;
-    newPos = startPos;
-
-    while (searchPos - startPos) < maxBytes
-        remaining = maxBytes - (searchPos - startPos);
-        fseek(fid, searchPos, 'bof');
-        candidatePos = findMagic(fid, pattern, remaining, chunkBytes);
-        if candidatePos < 0
-            break;
-        end
-
-        fseek(fid, candidatePos, 'bof');
-        valid = false;
-        try
-            FR = readFrameHeader(fid, machinefmt);
-            headerOk = (FR.frame_header_size >= 24);
-            if frameHeaderSize > 0
-                headerOk = headerOk && (FR.frame_header_size == frameHeaderSize);
-            end
-            payloadOk = (FR.frame_payload_size == bytesPerFrame);
-            if headerOk && payloadOk
-                valid = true;
-                nextPos = candidatePos + double(FR.frame_header_size) + double(FR.frame_payload_size);
-                if isfinite(fileSize) && fileSize > 0 && (nextPos + 4 <= fileSize)
-                    status = fseek(fid, nextPos, 'bof');
-                    if status ~= 0
-                        valid = false;
-                    else
-                        nextMagic = char(fread(fid, [1,4], '*char'));
-                        valid = strcmp(nextMagic, 'FRME');
-                    end
-                end
-            end
-        catch
-            valid = false;
-        end
-
-        if valid
-            fseek(fid, candidatePos, 'bof');
-            found = true;
-            newPos = candidatePos;
-            return
-        end
-
-        searchPos = candidatePos + 1;
-    end
-
-    fseek(fid, startPos, 'bof');
-end
-
-function pos = findMagic(fid, pattern, maxBytes, chunkBytes)
-    carry = uint8([]);
-    bytesRead = 0;
-    pos = -1;
-
-    while bytesRead < maxBytes
-        nToRead = min(chunkBytes, maxBytes - bytesRead);
-        buf = fread(fid, nToRead, '*uint8');
-        if isempty(buf)
-            break;
-        end
-
-        bytesRead = bytesRead + numel(buf);
-        buf2 = [carry; buf];
-        idx = strfind(buf2(:).', pattern(:).');
-        if ~isempty(idx)
-            posAfterRead = ftell(fid);
-            posBufStart = posAfterRead - numel(buf);
-            posBuf2Start = posBufStart - numel(carry);
-            pos = posBuf2Start + idx(1) - 1;
-            return
-        end
-
-        carryLen = numel(pattern) - 1;
-        if numel(buf2) >= carryLen
-            carry = buf2(end-carryLen+1:end);
-        else
-            carry = buf2;
-        end
-    end
 end
 
 function z = decodeIQV1(segInt16, S, iqOrder, opts)
