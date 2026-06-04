@@ -83,6 +83,7 @@ def parse_dopplium_raw(
     filename: str,
     *,
     max_frames: Optional[int] = None,
+    start_frame: Optional[int] = None,
     cast: str = "float32",          # 'float32' | 'float64' | 'int16' (for real sample_type==0)
     return_complex: bool = True,
     verbose: bool = True,
@@ -101,6 +102,8 @@ def parse_dopplium_raw(
         Path to the binary file
     max_frames : int, optional
         Maximum number of frames to read
+    start_frame : int, optional
+        Zero-based frame index to start reading from
     cast : str
         Data type for output ('float32', 'float64', 'int16')
     return_complex : bool
@@ -171,7 +174,10 @@ def parse_dopplium_raw(
         bytes_after_headers = file_size - FH.file_header_size - BH.body_header_size
         frame_unit = FH.frame_header_size + bytes_per_frame
         n_frames_total = max(0, bytes_after_headers // frame_unit)
-        n_frames = n_frames_total if max_frames is None else min(n_frames_total, max_frames)
+        start_frame = _coerce_optional_nonnegative_int(start_frame, "start_frame") or 0
+        max_frames = _coerce_optional_nonnegative_int(max_frames, "max_frames")
+        n_frames_available = max(0, n_frames_total - start_frame)
+        n_frames = n_frames_available if max_frames is None else min(n_frames_available, max_frames)
 
         # Infer "total chirps on wire" per frame from header bytes
         n_int16_hdr = bytes_per_frame // 2
@@ -219,29 +225,30 @@ def parse_dopplium_raw(
                 data = np.zeros((S, chirps_per_tx, n_chan_out, n_frames), dtype=np.int16)
 
         # Read frames
-        f.seek(FH.file_header_size + BH.body_header_size, io.SEEK_SET)
+        f.seek(FH.file_header_size + BH.body_header_size + start_frame * frame_unit, io.SEEK_SET)
         frame_headers = []
 
         dt_int16 = np.dtype("<i2" if endian_prefix == "<" else ">i2")
 
         for fi in range(n_frames):
+            frame_index = start_frame + fi
             FR = _read_frame_header(f, endian_prefix)
             frame_headers.append(FR)
             if FR.frame_payload_size != bytes_per_frame:
-                raise ValueError(f"Frame {fi+1}: payload size mismatch: header={FR.frame_payload_size}, "
+                raise ValueError(f"Frame {frame_index+1}: payload size mismatch: header={FR.frame_payload_size}, "
                                  f"expected={bytes_per_frame}")
 
             # Read payload exactly as many int16 as header declares
             n_int16_this = bytes_per_frame // 2
             buf = f.read(n_int16_this * 2)
             if len(buf) != n_int16_this * 2:
-                raise EOFError(f"Unexpected EOF while reading frame {fi+1} payload.")
+                raise EOFError(f"Unexpected EOF while reading frame {frame_index+1} payload.")
             raw = np.frombuffer(buf, dtype=dt_int16, count=n_int16_this)
 
             # Normalize block ordering to (block_len_ints, nRx, Ctot_hdr)
             n_blocks = nRx * Ctot_hdr
             if raw.size != n_blocks * block_len_ints:
-                raise ValueError(f"Frame {fi+1}: payload size does not match expected nBlocks*blockLenInts.")
+                raise ValueError(f"Frame {frame_index+1}: payload size does not match expected nBlocks*blockLenInts.")
             
             if BH.data_order == 0:
                 # ByChannel: on-wire grouping is [for c in Ctot, for rx in nRx] contiguous blocks
@@ -265,7 +272,7 @@ def parse_dopplium_raw(
                 for rx in range(nRx):
                     seg = buf_reshaped[:, rx, c]
                     if seg.size != block_len_ints:
-                        raise ValueError(f"Frame {fi+1}: payload indexing error at chirp {c}, rx {rx}. "
+                        raise ValueError(f"Frame {frame_index+1}: payload indexing error at chirp {c}, rx {rx}. "
                                        f"Expected {block_len_ints} elements, got {seg.size}.")
 
                     if BH.sample_type == 0:
@@ -303,7 +310,7 @@ def parse_dopplium_raw(
             expected_int16 = n_blocks * block_len_ints
             if expected_int16 != n_int16_this:
                 if verbose:
-                    print(f"Warning: frame {fi+1} expected to process {expected_int16} int16 "
+                    print(f"Warning: frame {frame_index+1} expected to process {expected_int16} int16 "
                           f"(nRx={nRx} * Ctot={Ctot_hdr} * blockLen={block_len_ints}), "
                           f"but header says {n_int16_this}.")
 
@@ -330,6 +337,15 @@ def _file_size(fh: io.BufferedReader) -> int:
     size = fh.tell()
     fh.seek(cur, io.SEEK_SET)
     return size
+
+
+def _coerce_optional_nonnegative_int(value: Optional[int], name: str) -> Optional[int]:
+    if value is None:
+        return None
+    coerced = int(value)
+    if coerced < 0:
+        raise ValueError(f"{name} must be >= 0")
+    return coerced
 
 
 def _read_body_header(f: io.BufferedReader, ep: str) -> BodyHeader:

@@ -40,6 +40,11 @@ data, headers = parse_dopplium("file.bin", verbose=True)
 print(headers["file"].message_type)
 ```
 
+For ADC, RDCh, and RadarCube files, pass `start_frame` to begin at a
+zero-based frame/CPI offset. With a limit, `parse_dopplium(...,
+start_frame=100, max_cpis_or_frames=50)` returns the half-open window
+`[100, 150)`. `start_frame` is not supported for Detections, Blobs, or Tracks.
+
 ### Direct parser calls
 
 ```python
@@ -52,9 +57,9 @@ from python_parser import (
     parse_dopplium_tracks,
 )
 
-raw, raw_headers = parse_dopplium_raw("raw.bin")
-rdch, rdch_headers = parse_dopplium_rdch("rdch.bin")
-cube, cube_headers = parse_dopplium_radarcube("radarcube.bin")
+raw, raw_headers = parse_dopplium_raw("raw.bin", start_frame=100, max_frames=50)
+rdch, rdch_headers = parse_dopplium_rdch("rdch.bin", start_frame=100, max_cpis=50)
+cube, cube_headers = parse_dopplium_radarcube("radarcube.bin", start_frame=100, max_cpis=50)
 detections, det_headers = parse_dopplium_detections("detections.bin")
 blobs, blob_headers = parse_dopplium_blobs("blobs.bin")
 tracks, track_headers = parse_dopplium_tracks("tracks.bin")

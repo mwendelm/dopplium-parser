@@ -16,6 +16,10 @@ This package provides six binary parsers for different radar data formats:
 | **parse_dopplium_tracks** | Tracks | 6 | Structured array of tracks | Tracked targets with state estimation |
 
 All parsers support automatic format detection via the main `parse_dopplium()` dispatcher.
+ADC, RDCh, and RadarCube parsers also support `start_frame` for zero-based
+offset reads. Combined with a limit, the returned window is
+`[start_frame, start_frame + max_frames)` for ADC or
+`[start_frame, start_frame + max_cpis)` for RDCh/RadarCube.
 
 ## Installation
 
@@ -79,6 +83,7 @@ from python_parser import parse_dopplium_raw
 # Parse raw ADC data
 data, headers = parse_dopplium_raw(
     "raw_data.bin",
+    start_frame=100,        # Start from zero-based frame index 100
     max_frames=100,          # Limit number of frames (None = all)
     cast='float32',          # Output data type
     return_complex=True,     # Return complex data (I+jQ)
@@ -121,6 +126,7 @@ from python_parser import (
 # Parse RDCh file
 data, headers = parse_dopplium_rdch(
     "rdch.bin",
+    start_frame=100,  # Start from zero-based CPI index 100
     max_cpis=50,    # Limit CPIs (None = all)
     verbose=True
 )
@@ -171,6 +177,7 @@ from python_parser import (
 # Parse RadarCube file
 data, headers = parse_dopplium_radarcube(
     "radarcube.bin",
+    start_frame=100,
     max_cpis=50,
     verbose=True
 )
@@ -434,6 +441,7 @@ All parsers share these capabilities:
 | **Header Access** | Full access to file, body, and CPI/batch headers |
 | **Verbose Mode** | Optional detailed output for debugging |
 | **Partial Reading** | Limit number of CPIs/frames/batches read |
+| **Offset Tensor Reading** | For ADC, RDCh, and RadarCube, `start_frame` reads from a zero-based frame/CPI offset |
 | **Endianness Support** | Handles both little-endian and big-endian files |
 | **Version Support** | Supports Version 2, Version 3, Version 4, and Version 5 formats |
 | **Error Handling** | Comprehensive validation and error messages |
@@ -603,16 +611,18 @@ peak_velocity = velocity_axis[doppler_bin]
 ### Memory-Efficient Partial Reading
 
 ```python
-# Read only first 10 CPIs (useful for large files)
+# Read 10 CPIs beginning at CPI 100 (useful for large files)
 data, headers = parse_dopplium_rdch(
     "large_file.bin",
+    start_frame=100,
     max_cpis=10,
     verbose=True
 )
 
-# Read specific number of frames
+# Read 50 frames beginning at frame 200
 raw_data, headers = parse_dopplium_raw(
     "raw_data.bin",
+    start_frame=200,
     max_frames=50
 )
 

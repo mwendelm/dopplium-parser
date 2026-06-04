@@ -49,6 +49,7 @@ def parse_dopplium(
     filename: str,
     *,
     max_cpis_or_frames: Optional[int] = None,
+    start_frame: Optional[int] = None,
     cast: str = "float32",
     return_complex: bool = True,
     verbose: bool = True
@@ -74,6 +75,9 @@ def parse_dopplium(
         Path to the Dopplium binary file
     max_cpis_or_frames : int, optional
         Maximum number of CPIs/frames to read (None = all)
+    start_frame : int, optional
+        Zero-based frame/CPI index to start reading from. Supported only for
+        ADCData, RDCh, and RadarCube files.
     cast : str
         Data type for output ('float32', 'float64', 'int16')
         Only used for RawData parsing
@@ -107,14 +111,19 @@ def parse_dopplium(
     # Dispatch based on version and message type
     version = file_header.version
     msg_type = file_header.message_type
+    start_frame_requested = start_frame is not None
     
     # Version 2 message type mappings
     if version == 2:
         if msg_type == 0:
             raise ValueError("File has unknown message_type (0). Cannot parse.")
         elif msg_type == 1:
+            if start_frame_requested:
+                raise ValueError("start_frame is only supported for ADCData, RDCh, and RadarCube files.")
             raise NotImplementedError("Version 2 Detections (message_type=1) not yet implemented.")
         elif msg_type == 2:
+            if start_frame_requested:
+                raise ValueError("start_frame is only supported for ADCData, RDCh, and RadarCube files.")
             raise NotImplementedError("Version 2 Tracks (message_type=2) not yet implemented.")
         elif msg_type == 3:
             # RawData/ADC
@@ -123,6 +132,7 @@ def parse_dopplium(
             return parse_dopplium_raw(
                 filename,
                 max_frames=max_cpis_or_frames,
+                start_frame=start_frame,
                 cast=cast,
                 return_complex=return_complex,
                 verbose=verbose,
@@ -130,6 +140,8 @@ def parse_dopplium(
                 _endian_prefix=endian_prefix
             )
         elif msg_type == 4:
+            if start_frame_requested:
+                raise ValueError("start_frame is only supported for ADCData, RDCh, and RadarCube files.")
             raise NotImplementedError("Version 2 Aggregated (message_type=4) not yet implemented.")
         else:
             raise ValueError(f"Unsupported Version 2 message_type: {msg_type}")
@@ -145,6 +157,7 @@ def parse_dopplium(
             return parse_dopplium_raw(
                 filename,
                 max_frames=max_cpis_or_frames,
+                start_frame=start_frame,
                 cast=cast,
                 return_complex=return_complex,
                 verbose=verbose,
@@ -158,6 +171,7 @@ def parse_dopplium(
             return parse_dopplium_rdch(
                 filename,
                 max_cpis=max_cpis_or_frames,
+                start_frame=start_frame,
                 verbose=verbose,
                 _file_header=file_header,
                 _endian_prefix=endian_prefix
@@ -168,12 +182,15 @@ def parse_dopplium(
             return parse_dopplium_radarcube(
                 filename,
                 max_cpis=max_cpis_or_frames,
+                start_frame=start_frame,
                 verbose=verbose,
                 _file_header=file_header,
                 _endian_prefix=endian_prefix
             )
         elif msg_type == 4:
             # Detections
+            if start_frame_requested:
+                raise ValueError("start_frame is only supported for ADCData, RDCh, and RadarCube files.")
             if verbose:
                 print("Routing to Detections parser...")
             from .parse_dopplium_detections import parse_dopplium_detections
@@ -186,6 +203,8 @@ def parse_dopplium(
             )
         elif msg_type == 5:
             # Blobs
+            if start_frame_requested:
+                raise ValueError("start_frame is only supported for ADCData, RDCh, and RadarCube files.")
             if verbose:
                 print("Routing to Blobs parser...")
             from .parse_dopplium_blobs import parse_dopplium_blobs
@@ -198,6 +217,8 @@ def parse_dopplium(
             )
         elif msg_type == 6:
             # Tracks
+            if start_frame_requested:
+                raise ValueError("start_frame is only supported for ADCData, RDCh, and RadarCube files.")
             if verbose:
                 print("Routing to Tracks parser...")
             from .parse_dopplium_tracks import parse_dopplium_tracks

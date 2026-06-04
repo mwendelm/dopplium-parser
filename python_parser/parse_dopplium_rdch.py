@@ -91,6 +91,7 @@ def parse_dopplium_rdch(
     filename: str,
     *,
     max_cpis: Optional[int] = None,
+    start_frame: Optional[int] = None,
     verbose: bool = True,
     _file_header: Optional[FileHeader] = None,
     _endian_prefix: Optional[str] = None
@@ -104,6 +105,8 @@ def parse_dopplium_rdch(
         Path to the RDCh binary file
     max_cpis : int, optional
         Maximum number of CPIs to read (None = all CPIs)
+    start_frame : int, optional
+        Zero-based CPI index to start reading from
     verbose : bool
         Print parsing information
     _file_header : FileHeader, optional
@@ -170,18 +173,22 @@ def parse_dopplium_rdch(
         if verbose:
             print(f"Estimated CPIs in file: {n_cpis_estimate}")
         
-        n_cpis = n_cpis_estimate if max_cpis is None else min(n_cpis_estimate, max_cpis)
+        start_frame = _coerce_optional_nonnegative_int(start_frame, "start_frame") or 0
+        max_cpis = _coerce_optional_nonnegative_int(max_cpis, "max_cpis")
+        n_cpis_available = max(0, n_cpis_estimate - start_frame)
+        n_cpis = n_cpis_available if max_cpis is None else min(n_cpis_available, max_cpis)
         
         # Allocate output array
         # We'll start with estimated size and potentially resize if needed
         data = np.zeros((n_range, n_doppler, n_channels, n_cpis), dtype=dtype)
         
         # Read CPIs
-        f.seek(FH.file_header_size + BH.body_header_size, io.SEEK_SET)
+        f.seek(FH.file_header_size + BH.body_header_size + start_frame * cpi_unit, io.SEEK_SET)
         cpi_headers = []
         
         cpis_read = 0
         while cpis_read < n_cpis:
+            cpi_index = start_frame + cpis_read
             try:
                 # Check if we have enough bytes left
                 current_pos = f.tell()
@@ -198,13 +205,13 @@ def parse_dopplium_rdch(
                 # Validate CPI payload size
                 if CH.cpi_payload_size != expected_payload_size:
                     if verbose:
-                        print(f"Warning: CPI {cpis_read} payload size mismatch: "
+                        print(f"Warning: CPI {cpi_index} payload size mismatch: "
                               f"expected={expected_payload_size}, got={CH.cpi_payload_size}")
                 
                 # Read payload
                 payload_bytes = f.read(CH.cpi_payload_size)
                 if len(payload_bytes) != CH.cpi_payload_size:
-                    raise EOFError(f"Unexpected EOF while reading CPI {cpis_read} payload.")
+                    raise EOFError(f"Unexpected EOF while reading CPI {cpi_index} payload.")
                 
                 # Reshape payload to [range, doppler, channels]
                 # Note: Data is stored in Fortran-order (column-major) with range varying fastest
@@ -215,7 +222,7 @@ def parse_dopplium_rdch(
                     cpi_data = cpi_data.reshape((n_range, n_doppler, n_channels), order='F')
                     data[:, :, :, cpis_read] = cpi_data
                 except ValueError as e:
-                    raise ValueError(f"CPI {cpis_read}: Cannot reshape payload. "
+                    raise ValueError(f"CPI {cpi_index}: Cannot reshape payload. "
                                    f"Expected {n_range}x{n_doppler}x{n_channels} = "
                                    f"{n_range * n_doppler * n_channels} elements, "
                                    f"got {cpi_data.size}. Error: {e}")
@@ -256,6 +263,15 @@ def _file_size(fh: io.BufferedReader) -> int:
     size = fh.tell()
     fh.seek(cur, io.SEEK_SET)
     return size
+
+
+def _coerce_optional_nonnegative_int(value: Optional[int], name: str) -> Optional[int]:
+    if value is None:
+        return None
+    coerced = int(value)
+    if coerced < 0:
+        raise ValueError(f"{name} must be >= 0")
+    return coerced
 
 
 def _read_rdch_body_header(f: io.BufferedReader, ep: str) -> RDChBodyHeader:
