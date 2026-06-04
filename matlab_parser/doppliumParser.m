@@ -21,6 +21,8 @@ function [data, headers] = doppliumParser(filename, opts)
 %
 %   OPTS (all optional)
 %     .maxFrames      : limit number of frames to read (default: Inf = all)
+%     .startFrame     : zero-based frame/CPI index to start from (default: 0)
+%                       Supported for ADCData, RDCMaps, and RadarCube only.
 %     .cast           : 'double'|'single'|'int16' for output samples (default 'single')
 %     .returnComplex  : true/false, if complex IQ => return complex numbers (default true)
 %     .verbose        : true/false (default true)
@@ -33,7 +35,13 @@ end
 
 % Set default options
 if nargin < 2, opts = struct; end
+startFrameRequested = (isfield(opts, 'startFrame') && ~isempty(opts.startFrame)) || ...
+                      (isfield(opts, 'start_frame') && ~isempty(opts.start_frame));
+if isfield(opts, 'start_frame') && ~isfield(opts, 'startFrame')
+    opts.startFrame = opts.start_frame;
+end
 opts = setDefault(opts, 'maxFrames', Inf);
+opts = setDefault(opts, 'startFrame', 0);
 opts = setDefault(opts, 'cast', 'single');
 opts = setDefault(opts, 'returnComplex', true);
 opts = setDefault(opts, 'verbose', true);
@@ -106,10 +114,19 @@ switch messageType
         end
         [data, headers] = parseRadarCube(fid, FH, machinefmt, filename, opts);
     case 4 % Detections
+        if startFrameRequested
+            error('startFrame is only supported for ADCData, RDCMaps, and RadarCube files.');
+        end
         [data, headers] = parseDetections(fid, FH, machinefmt, filename, opts);
     case 5 % Blobs
+        if startFrameRequested
+            error('startFrame is only supported for ADCData, RDCMaps, and RadarCube files.');
+        end
         [data, headers] = parseBlobs(fid, FH, machinefmt, filename, opts);
     case 6 % Tracks
+        if startFrameRequested
+            error('startFrame is only supported for ADCData, RDCMaps, and RadarCube files.');
+        end
         [data, headers] = parseTracks(fid, FH, machinefmt, filename, opts);
     otherwise
         error('Unsupported message_type=%d for version=%d.', FH.message_type, version);

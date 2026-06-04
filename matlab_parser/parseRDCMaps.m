@@ -5,6 +5,9 @@ function [data, headers] = parseRDCMaps(fid, FH, machinefmt, filename, opts)
 %   Returns:
 %     data    : array shaped [range_bins, doppler_bins, channels, cpis]
 %     headers : struct with fields .file, .body, .cpi
+%
+%   opts.startFrame is a zero-based CPI index. opts.maxFrames/opts.maxCPIs
+%   limit the number of CPIs read after that start index.
 
 % Version/message validation (match Python behavior)
 if ~(FH.version == 3 || FH.version == 4 || FH.version == 5) || FH.message_type ~= 2
@@ -17,12 +20,18 @@ end
 if nargin < 6 || isempty(opts)
     opts = struct;
 end
+if isfield(opts, 'start_frame') && ~isfield(opts, 'startFrame')
+    opts.startFrame = opts.start_frame;
+end
 if ~isfield(opts, 'verbose'), opts.verbose = true; end
 if ~isfield(opts, 'maxFrames'), opts.maxFrames = Inf; end
+if ~isfield(opts, 'startFrame'), opts.startFrame = 0; end
 maxCpis = opts.maxFrames;
 if isfield(opts, 'maxCPIs')
     maxCpis = opts.maxCPIs;
 end
+maxCpis = coerceOptionalNonnegativeInt(maxCpis, 'maxCPIs', Inf, true);
+startFrame = coerceOptionalNonnegativeInt(opts.startFrame, 'startFrame', 0, false);
 
 % Read body header
 fseek(fid, FH.file_header_size, 'bof');
@@ -48,7 +57,8 @@ if cpiUnit <= 0
 else
     nCpisEstimate = max(0, floor(bytesAfterHeaders / cpiUnit));
 end
-nCpis = min(nCpisEstimate, maxCpis);
+nCpisAvailable = max(0, nCpisEstimate - startFrame);
+nCpis = min(nCpisAvailable, maxCpis);
 
 if opts.verbose
     fprintf('\nExpected payload size per CPI: %d bytes\n', expectedPayloadBytes);
@@ -65,11 +75,13 @@ else
 end
 
 % Read CPIs
-fseek(fid, FH.file_header_size + BH.body_header_size, 'bof');
+fseek(fid, FH.file_header_size + BH.body_header_size + startFrame * cpiUnit, 'bof');
 cpiHeaders = repmat(emptyCPIHeader(), 0, 1);
 cpisRead = 0;
 
 while cpisRead < nCpis
+    cpiIndex = startFrame + cpisRead;
+    cpiOrdinal = cpiIndex + 1;
     if ftell(fid) >= fileInfo.bytes
         break;
     end
@@ -87,21 +99,21 @@ while cpisRead < nCpis
             if opts.verbose
                 warning('parseRDCMaps:PayloadSizeMismatch', ...
                     'CPI %d payload size mismatch: expected=%d, got=%d', ...
-                    cpisRead, expectedPayloadBytes, CH.cpi_payload_size);
+                    cpiIndex, expectedPayloadBytes, CH.cpi_payload_size);
             end
         end
 
         if mod(double(CH.cpi_payload_size), bytesPerElement) ~= 0
             error('parseRDCMaps:InvalidPayloadSize', ...
                 'CPI %d payload bytes (%d) not divisible by bytesPerElement (%d).', ...
-                cpisRead + 1, CH.cpi_payload_size, bytesPerElement);
+                cpiOrdinal, CH.cpi_payload_size, bytesPerElement);
         end
 
         % Honor cpi_header_size for forward compatibility.
         extraHeaderBytes = double(CH.cpi_header_size) - 22;
         if extraHeaderBytes < 0
             error('parseRDCMaps:InvalidHeaderSize', ...
-                'CPI %d has invalid cpi_header_size=%d (<22).', cpisRead + 1, CH.cpi_header_size);
+                'CPI %d has invalid cpi_header_size=%d (<22).', cpiOrdinal, CH.cpi_header_size);
         elseif extraHeaderBytes > 0
             fseek(fid, extraHeaderBytes, 'cof');
         end
@@ -115,7 +127,7 @@ while cpisRead < nCpis
             error('parseRDCMaps:ReshapeError', ...
                 ['CPI %d: Cannot reshape payload. Expected %dx%dx%d=%d elements, got %d. ' ...
                  'Underlying error: %s'], ...
-                 cpisRead, nRange, nDopp, nChan, nRange*nDopp*nChan, numel(payload), ME.message);
+                 cpiIndex, nRange, nDopp, nChan, nRange*nDopp*nChan, numel(payload), ME.message);
         end
 
         cpisRead = cpisRead + 1;

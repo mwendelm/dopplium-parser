@@ -73,6 +73,15 @@ Use the MATLAB dispatcher:
 [data, headers] = doppliumParser('file.bin');
 ```
 
+For ADC, RDCMaps, and RadarCube files, MATLAB also accepts a zero-based
+`startFrame` option:
+
+```matlab
+opts.startFrame = 100;
+opts.maxFrames = 50;
+[data, headers] = doppliumParser('file.bin', opts);
+```
+
 Or call format-specific functions in `matlab_parser/`:
 - `parseADCData`
 - `parseRDCMaps`

@@ -8,11 +8,25 @@ function [data, headers] = parseADCData(fid, FH, machinefmt, filename, opts)
 %     machinefmt : endianness ('ieee-le' or 'ieee-be')
 %     filename   : file path (for size calculation)
 %     opts       : options struct with fields:
-%                  .maxFrames, .cast, .returnComplex, .verbose
+%                  .maxFrames, .startFrame, .cast, .returnComplex, .verbose
 %
 %   OUTPUTS
 %     data    : array shaped [samples, chirpsPerTx, channel, frame]
 %     headers : struct with file/body/frame headers and derived info
+
+if nargin < 6 || isempty(opts)
+    opts = struct;
+end
+if isfield(opts, 'start_frame') && ~isfield(opts, 'startFrame')
+    opts.startFrame = opts.start_frame;
+end
+if ~isfield(opts, 'maxFrames'), opts.maxFrames = Inf; end
+if ~isfield(opts, 'startFrame'), opts.startFrame = 0; end
+if ~isfield(opts, 'cast'), opts.cast = 'single'; end
+if ~isfield(opts, 'returnComplex'), opts.returnComplex = true; end
+if ~isfield(opts, 'verbose'), opts.verbose = true; end
+maxFrames = coerceOptionalNonnegativeInt(opts.maxFrames, 'maxFrames', Inf, true);
+startFrame = coerceOptionalNonnegativeInt(opts.startFrame, 'startFrame', 0, false);
 
 % -------------------------------------------------------------------------
 % Read body header (ADC/RawData format)
@@ -80,9 +94,10 @@ fileInfo = dir(filename);
 bytesAfterHeaders = fileInfo.bytes - FH.file_header_size - BH.body_header_size;
 bytesPerUnit = BH.frame_header_size + bytesPerFrame;
 nFramesTotal = floor(bytesAfterHeaders / bytesPerUnit);
-nFrames = min(nFramesTotal, opts.maxFrames);
-if isfinite(opts.maxFrames) && opts.maxFrames > nFramesTotal
-    warning('Requested maxFrames exceeds file content. Reading %d frames.', nFramesTotal);
+nFramesAvailable = max(0, nFramesTotal - startFrame);
+nFrames = min(nFramesAvailable, maxFrames);
+if isfinite(maxFrames) && maxFrames > nFramesAvailable
+    warning('Requested maxFrames exceeds available content from startFrame. Reading %d frames.', nFramesAvailable);
 end
 
 % Output dimensions
@@ -109,22 +124,24 @@ end
 % -------------------------------------------------------------------------
 % Read frames
 % -------------------------------------------------------------------------
-fseek(fid, FH.file_header_size + BH.body_header_size, 'bof');
+fseek(fid, FH.file_header_size + BH.body_header_size + startFrame * bytesPerUnit, 'bof');
 frames = repmat(emptyFrameHeader(), nFrames, 1);
 
 for f = 1:nFrames
+    frameIndex = startFrame + f - 1;
+    frameOrdinal = frameIndex + 1;
     FR = readFrameHeader(fid, machinefmt);
     frames(f) = FR;
 
     if FR.frame_payload_size ~= bytesPerFrame
         error('Frame %d payload size mismatch: header=%d, expected=%d', ...
-              f, FR.frame_payload_size, bytesPerFrame);
+              frameOrdinal, FR.frame_payload_size, bytesPerFrame);
     end
 
     % Honor frame_header_size for forward compatibility.
     extraFrameHeaderBytes = double(FR.frame_header_size) - 24;
     if extraFrameHeaderBytes < 0
-        error('Frame %d has invalid frame_header_size=%d (<24).', f, FR.frame_header_size);
+        error('Frame %d has invalid frame_header_size=%d (<24).', frameOrdinal, FR.frame_header_size);
     elseif extraFrameHeaderBytes > 0
         fseek(fid, extraFrameHeaderBytes, 'cof');
     end
@@ -133,20 +150,20 @@ for f = 1:nFrames
     nInt16_hdr = bytesPerFrame / 2;
     raw = fread(fid, nInt16_hdr, '*int16', 0, machinefmt);
     if numel(raw) ~= nInt16_hdr
-        error('Unexpected EOF while reading frame %d payload.', f);
+        error('Unexpected EOF while reading frame %d payload.', frameOrdinal);
     end
 
     % Theoretical count (for info only)
     nInt16_theo = blockLenInts * nRx * Ctot;
     if nInt16_theo ~= nInt16_hdr
         warning(['Frame %d: header bytes imply %d int16, but theoretical calc suggests %d. ' ...
-                 'Proceeding with header-derived sizing.'], f, nInt16_hdr, nInt16_theo);
+                 'Proceeding with header-derived sizing.'], frameOrdinal, nInt16_hdr, nInt16_theo);
     end
 
     % ---- Normalize block ordering to (blockLenInts, rx, c) ----
     nBlocks = nRx * Ctot;
     assert(numel(raw) == nBlocks * blockLenInts, ...
-        'Frame %d: payload size does not match expected nBlocks*blockLenInts.', f);
+        'Frame %d: payload size does not match expected nBlocks*blockLenInts.', frameOrdinal);
 
     switch BH.data_order
         case 0 % ByChannel: on-wire grouping is [for c=1..Ctot, for rx=1..nRx] contiguous blocks
