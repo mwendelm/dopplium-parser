@@ -14,7 +14,7 @@ function [data, headers] = parseADCData(fid, FH, machinefmt, filename, opts)
 %     data    : array shaped [samples, chirpsPerTx, channel, frame]
 %     headers : struct with file/body/frame headers and derived info
 
-if nargin < 6 || isempty(opts)
+if nargin < 5 || isempty(opts)
     opts = struct;
 end
 if isfield(opts, 'start_frame') && ~isfield(opts, 'startFrame')
