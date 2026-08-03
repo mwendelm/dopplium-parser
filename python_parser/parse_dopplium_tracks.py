@@ -23,6 +23,7 @@ from typing import Tuple, Dict, Any, Optional, List
 
 import numpy as np
 
+from ._verbose import _validate_verbose
 from .parse_dopplium_header import FileHeader, parse_file_header
 
 
@@ -72,7 +73,7 @@ def parse_dopplium_tracks(
     filename: str,
     *,
     max_frames: Optional[int] = None,
-    verbose: bool = True,
+    verbose: int = 4,
     _file_header: Optional[FileHeader] = None,
     _endian_prefix: Optional[str] = None
 ) -> Tuple[np.ndarray, Dict[str, Any]]:
@@ -85,8 +86,8 @@ def parse_dopplium_tracks(
         Path to the Tracks binary file
     max_frames : int, optional
         Maximum number of frames to read (None = all frames)
-    verbose : bool
-        Print parsing information
+    verbose : int
+        Verbosity level from 0 (nothing) to 4 (everything, default)
     _file_header : FileHeader, optional
         Pre-parsed file header (internal use)
     _endian_prefix : str, optional
@@ -100,6 +101,8 @@ def parse_dopplium_tracks(
         headers : dict
             Dictionary containing 'file', 'body', and 'frame' headers
     """
+    verbose = _validate_verbose(verbose)
+
     with open(filename, "rb") as f:
         # Use provided header or parse it
         if _file_header is None or _endian_prefix is None:
@@ -121,14 +124,14 @@ def parse_dopplium_tracks(
         
         BH = _read_tracks_body_header(f, endian_prefix)
         
-        if verbose:
+        if verbose >= 2:
             _print_header_summary(FH, BH)
         
         # Determine number of frames from file size
         file_size = _file_size(f)
         bytes_after_headers = file_size - FH.file_header_size - BH.body_header_size
         
-        if verbose:
+        if verbose >= 2:
             print(f"\nBytes after headers: {bytes_after_headers}")
         
         # We'll read frame by frame since track counts vary
@@ -136,7 +139,7 @@ def parse_dopplium_tracks(
         avg_frame_size = BH.frame_header_size + (10 * BH.track_record_size)  # Assume ~10 tracks per frame
         n_frames_estimate = max(1, bytes_after_headers // avg_frame_size)
         
-        if verbose:
+        if verbose >= 2:
             print(f"Estimated frames in file: ~{n_frames_estimate}")
         
         # Read frames
@@ -160,18 +163,17 @@ def parse_dopplium_tracks(
                 frame_header = _read_frame_header(f, endian_prefix)
                 frame_headers.append(frame_header)
                 
-                if verbose and (frames_read == 0 or (frames_read + 1) % 100 == 0):
+                if verbose >= 3 and (frames_read == 0 or (frames_read + 1) % 100 == 0):
                     print(f"  Reading frame {frames_read + 1}: "
                           f"seq={frame_header.sequence_number}, "
                           f"tracks={frame_header.num_tracks}, "
                           f"size={frame_header.payload_size_bytes} bytes")
-                
+
                 # Validate payload size
                 expected_payload_size = frame_header.num_tracks * BH.track_record_size
                 if frame_header.payload_size_bytes != expected_payload_size:
-                    if verbose:
-                        print(f"Warning: Frame {frames_read} payload size mismatch: "
-                              f"expected={expected_payload_size}, got={frame_header.payload_size_bytes}")
+                    print(f"Warning: Frame {frames_read} payload size mismatch: "
+                          f"expected={expected_payload_size}, got={frame_header.payload_size_bytes}")
                 
                 # Read track records
                 if frame_header.num_tracks > 0:
@@ -187,12 +189,10 @@ def parse_dopplium_tracks(
                 frames_read += 1
                 
             except EOFError:
-                if verbose:
-                    print(f"Reached end of file after reading {frames_read} frames.")
+                print(f"Reached end of file after reading {frames_read} frames.")
                 break
             except struct.error as e:
-                if verbose:
-                    print(f"Struct error after reading {frames_read} frames: {e}")
+                print(f"Struct error after reading {frames_read} frames: {e}")
                 break
         
         # Combine all tracks
@@ -208,7 +208,7 @@ def parse_dopplium_tracks(
             "frame": frame_headers,
         }
         
-        if verbose:
+        if verbose >= 1:
             print(f"\nTotal frames read: {frames_read}")
             print(f"Total tracks: {len(data)}")
             if len(data) > 0:

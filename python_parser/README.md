@@ -48,6 +48,24 @@ print(f"Message type: {headers['file'].message_type}")
 print(f"Data shape: {data.shape}")
 ```
 
+### Verbosity
+
+Every parse function takes a `verbose` int from 0 (nothing) to 4 (everything, the default):
+
+| Level | Output |
+|-------|--------|
+| 0 | Nothing (informational output only — see note below) |
+| 1 | Final summary (shape/record counts) |
+| 2 | + Dispatcher routing message, header/config summary, size estimates |
+| 3 | + Throttled per-record/per-batch/per-CPI progress |
+| 4 (default) | Same as 3 (reserved for future finer-grained progress) |
+
+Anomaly warnings (payload-size mismatches) and EOF/struct-error notices always print, regardless of `verbose` — they are not gated by this scale.
+
+```python
+data, headers = parse_dopplium("file.bin", verbose=0)  # parses silently (warnings still show if any)
+```
+
 ### Direct Parser Usage
 
 For when you know the format ahead of time:
@@ -828,7 +846,7 @@ All parsers handle these numpy data types:
 
 4. **Use verbose mode for debugging**:
    ```python
-   data, headers = parse_dopplium("file.bin", verbose=True)
+   data, headers = parse_dopplium("file.bin", verbose=4)  # or verbose=2/3 for less detail
    ```
 
 5. **Access metadata through helper functions**:

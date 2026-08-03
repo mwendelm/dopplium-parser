@@ -18,6 +18,7 @@ from typing import Tuple, Dict, Any, Optional
 
 import numpy as np
 
+from ._verbose import _validate_verbose
 from .parse_dopplium_header import FileHeader, parse_file_header
 
 
@@ -86,7 +87,7 @@ def parse_dopplium_raw(
     start_frame: Optional[int] = None,
     cast: str = "float32",          # 'float32' | 'float64' | 'int16' (for real sample_type==0)
     return_complex: bool = True,
-    verbose: bool = True,
+    verbose: int = 4,
     _file_header: Optional[FileHeader] = None,
     _endian_prefix: Optional[str] = None
 ) -> Tuple[np.ndarray, Dict[str, Any]]:
@@ -108,13 +109,15 @@ def parse_dopplium_raw(
         Data type for output ('float32', 'float64', 'int16')
     return_complex : bool
         Whether to return complex data
-    verbose : bool
-        Print parsing information
+    verbose : int
+        Verbosity level from 0 (nothing) to 4 (everything, default)
     _file_header : FileHeader, optional
         Pre-parsed file header (internal use)
     _endian_prefix : str, optional
         Endianness prefix (internal use)
     """
+    verbose = _validate_verbose(verbose)
+
     with open(filename, "rb") as f:
         # Use provided header or parse it
         if _file_header is None or _endian_prefix is None:
@@ -144,7 +147,7 @@ def parse_dopplium_raw(
         
         BH = _read_body_header(f, endian_prefix)
 
-        if verbose:
+        if verbose >= 2:
             _print_header_summary(FH, BH)
 
         # Sizes & checks
@@ -186,7 +189,7 @@ def parse_dopplium_raw(
             raise ValueError("Invalid header values (zero-sized denominator for chirp inference).")
         Ctot_hdr_float = n_int16_hdr / denom
         Ctot_hdr = int(round(Ctot_hdr_float))
-        if abs(Ctot_hdr - Ctot_hdr_float) > 1e-6 and verbose:
+        if abs(Ctot_hdr - Ctot_hdr_float) > 1e-6:
             print(f"Warning: total-chirps inference non-integer ({Ctot_hdr_float:.3f}); rounding to {Ctot_hdr}.")
 
         # Decide chirpsPerTx we expose on dim-2
@@ -203,7 +206,7 @@ def parse_dopplium_raw(
             chirps_per_tx = max(1, math.ceil(Ctot_hdr / max(nTx, 1)))
             interpret = "inferred"
 
-        if verbose:
+        if verbose >= 2:
             print(f"Chirp interpretation: {interpret} | total_on_wire={Ctot_hdr} | "
                   f"chirpsPerTx(dim-2)={chirps_per_tx} | nTx={nTx}")
 
@@ -309,10 +312,9 @@ def parse_dopplium_raw(
             # Validate that we processed the expected amount of data
             expected_int16 = n_blocks * block_len_ints
             if expected_int16 != n_int16_this:
-                if verbose:
-                    print(f"Warning: frame {frame_index+1} expected to process {expected_int16} int16 "
-                          f"(nRx={nRx} * Ctot={Ctot_hdr} * blockLen={block_len_ints}), "
-                          f"but header says {n_int16_this}.")
+                print(f"Warning: frame {frame_index+1} expected to process {expected_int16} int16 "
+                      f"(nRx={nRx} * Ctot={Ctot_hdr} * blockLen={block_len_ints}), "
+                      f"but header says {n_int16_this}.")
 
         headers = {
             "file": FH,
@@ -320,7 +322,7 @@ def parse_dopplium_raw(
             "frame": frame_headers,
         }
 
-        if verbose:
+        if verbose >= 1:
             print(f"\nParsed data shape: {tuple(data.shape)}  "
                   f"[samples, chirpsPerTx, channels, frames]")
 

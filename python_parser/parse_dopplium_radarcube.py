@@ -22,6 +22,7 @@ from typing import Tuple, Dict, Any, Optional, List
 
 import numpy as np
 
+from ._verbose import _validate_verbose
 from .parse_dopplium_header import FileHeader, parse_file_header
 
 
@@ -108,7 +109,7 @@ def parse_dopplium_radarcube(
     *,
     max_cpis: Optional[int] = None,
     start_frame: Optional[int] = None,
-    verbose: bool = True,
+    verbose: int = 4,
     _file_header: Optional[FileHeader] = None,
     _endian_prefix: Optional[str] = None
 ) -> Tuple[np.ndarray, Dict[str, Any]]:
@@ -123,8 +124,8 @@ def parse_dopplium_radarcube(
         Maximum number of CPIs to read (None = all CPIs)
     start_frame : int, optional
         Zero-based CPI index to start reading from
-    verbose : bool
-        Print parsing information
+    verbose : int
+        Verbosity level from 0 (nothing) to 4 (everything, default)
     _file_header : FileHeader, optional
         Pre-parsed file header (internal use)
     _endian_prefix : str, optional
@@ -138,6 +139,8 @@ def parse_dopplium_radarcube(
         headers : dict
             Dictionary containing 'file', 'body', and 'cpi' headers
     """
+    verbose = _validate_verbose(verbose)
+
     with open(filename, "rb") as f:
         # Use provided header or parse it
         if _file_header is None or _endian_prefix is None:
@@ -159,7 +162,7 @@ def parse_dopplium_radarcube(
         
         BH = _read_radarcube_body_header(f, endian_prefix)
         
-        if verbose:
+        if verbose >= 2:
             _print_header_summary(FH, BH)
         
         # Extract dimensions
@@ -179,14 +182,14 @@ def parse_dopplium_radarcube(
         # Calculate expected payload size per CPI
         expected_payload_size = n_range * n_doppler * n_azimuth * n_elevation * dtype.itemsize
         
-        if verbose:
+        if verbose >= 2:
             print(f"\nExpected payload size per CPI: {expected_payload_size} bytes")
             print(f"Bytes after headers: {bytes_after_headers}")
         
         # Estimate number of CPIs
         n_cpis_estimate = max(0, bytes_after_headers // cpi_unit)
         
-        if verbose:
+        if verbose >= 2:
             print(f"Estimated CPIs in file: {n_cpis_estimate}")
         
         start_frame = _coerce_optional_nonnegative_int(start_frame, "start_frame") or 0
@@ -213,15 +216,14 @@ def parse_dopplium_radarcube(
                 CH = _read_cpi_header(f, endian_prefix)
                 cpi_headers.append(CH)
                 
-                if verbose and (cpis_read == 0 or (cpis_read + 1) % 10 == 0):
+                if verbose >= 3 and (cpis_read == 0 or (cpis_read + 1) % 10 == 0):
                     print(f"  Reading CPI {cpis_read + 1}/{n_cpis}: "
                           f"number={CH.cpi_number}, size={CH.cpi_payload_size} bytes")
-                
+
                 # Validate CPI payload size
                 if CH.cpi_payload_size != expected_payload_size:
-                    if verbose:
-                        print(f"Warning: CPI {cpi_index} payload size mismatch: "
-                              f"expected={expected_payload_size}, got={CH.cpi_payload_size}")
+                    print(f"Warning: CPI {cpi_index} payload size mismatch: "
+                          f"expected={expected_payload_size}, got={CH.cpi_payload_size}")
                 
                 # Read payload
                 payload_bytes = f.read(CH.cpi_payload_size)
@@ -245,8 +247,7 @@ def parse_dopplium_radarcube(
                 cpis_read += 1
                 
             except EOFError:
-                if verbose:
-                    print(f"Reached end of file after reading {cpis_read} CPIs.")
+                print(f"Reached end of file after reading {cpis_read} CPIs.")
                 break
         
         # Trim data array if we read fewer CPIs than estimated
@@ -259,7 +260,7 @@ def parse_dopplium_radarcube(
             "cpi": cpi_headers,
         }
         
-        if verbose:
+        if verbose >= 1:
             print(f"\nParsed data shape: {tuple(data.shape)}  "
                   f"[range_bins, doppler_bins, azimuth_bins, elevation_bins, cpis]")
             print(f"Total CPIs read: {cpis_read}")

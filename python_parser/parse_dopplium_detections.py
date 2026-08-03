@@ -23,6 +23,7 @@ from typing import Tuple, Dict, Any, Optional, List
 
 import numpy as np
 
+from ._verbose import _validate_verbose
 from .parse_dopplium_header import FileHeader, parse_file_header
 
 
@@ -65,7 +66,7 @@ def parse_dopplium_detections(
     filename: str,
     *,
     max_batches: Optional[int] = None,
-    verbose: bool = True,
+    verbose: int = 4,
     _file_header: Optional[FileHeader] = None,
     _endian_prefix: Optional[str] = None
 ) -> Tuple[np.ndarray, Dict[str, Any]]:
@@ -78,8 +79,8 @@ def parse_dopplium_detections(
         Path to the Detections binary file
     max_batches : int, optional
         Maximum number of batches to read (None = all batches)
-    verbose : bool
-        Print parsing information
+    verbose : int
+        Verbosity level from 0 (nothing) to 4 (everything, default)
     _file_header : FileHeader, optional
         Pre-parsed file header (internal use)
     _endian_prefix : str, optional
@@ -106,6 +107,8 @@ def parse_dopplium_detections(
         headers : dict
             Dictionary containing 'file', 'body', and 'batch' headers
     """
+    verbose = _validate_verbose(verbose)
+
     with open(filename, "rb") as f:
         # Use provided header or parse it
         if _file_header is None or _endian_prefix is None:
@@ -127,14 +130,14 @@ def parse_dopplium_detections(
         
         BH = _read_detections_body_header(f, endian_prefix)
         
-        if verbose:
+        if verbose >= 2:
             _print_header_summary(FH, BH)
         
         # Determine number of batches from file size
         file_size = _file_size(f)
         bytes_after_headers = file_size - FH.file_header_size - BH.body_header_size
         
-        if verbose:
+        if verbose >= 2:
             print(f"\nBytes after headers: {bytes_after_headers}")
         
         # We'll read batch by batch since detection counts vary
@@ -142,7 +145,7 @@ def parse_dopplium_detections(
         avg_batch_size = BH.payload_header_size + (10 * BH.detection_record_size)  # Assume ~10 detections per batch
         n_batches_estimate = max(1, bytes_after_headers // avg_batch_size)
         
-        if verbose:
+        if verbose >= 2:
             print(f"Estimated batches in file: ~{n_batches_estimate}")
         
         n_batches = n_batches_estimate if max_batches is None else max_batches
@@ -168,18 +171,17 @@ def parse_dopplium_detections(
                 batch_header = _read_batch_header(f, endian_prefix)
                 batch_headers.append(batch_header)
                 
-                if verbose and (batches_read == 0 or (batches_read + 1) % 100 == 0):
+                if verbose >= 3 and (batches_read == 0 or (batches_read + 1) % 100 == 0):
                     print(f"  Reading batch {batches_read + 1}: "
                           f"seq={batch_header.sequence_number}, "
                           f"detections={batch_header.detection_count}, "
                           f"size={batch_header.payload_size_bytes} bytes")
-                
+
                 # Validate payload size
                 expected_payload_size = batch_header.detection_count * BH.detection_record_size
                 if batch_header.payload_size_bytes != expected_payload_size:
-                    if verbose:
-                        print(f"Warning: Batch {batches_read} payload size mismatch: "
-                              f"expected={expected_payload_size}, got={batch_header.payload_size_bytes}")
+                    print(f"Warning: Batch {batches_read} payload size mismatch: "
+                          f"expected={expected_payload_size}, got={batch_header.payload_size_bytes}")
                 
                 # Read detection records
                 if batch_header.detection_count > 0:
@@ -195,12 +197,10 @@ def parse_dopplium_detections(
                 batches_read += 1
                 
             except EOFError:
-                if verbose:
-                    print(f"Reached end of file after reading {batches_read} batches.")
+                print(f"Reached end of file after reading {batches_read} batches.")
                 break
             except struct.error as e:
-                if verbose:
-                    print(f"Struct error after reading {batches_read} batches: {e}")
+                print(f"Struct error after reading {batches_read} batches: {e}")
                 break
         
         # Combine all detections
@@ -216,7 +216,7 @@ def parse_dopplium_detections(
             "batch": batch_headers,
         }
         
-        if verbose:
+        if verbose >= 1:
             print(f"\nTotal batches read: {batches_read}")
             print(f"Total detections: {len(data)}")
             if len(data) > 0:

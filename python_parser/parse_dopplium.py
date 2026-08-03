@@ -40,6 +40,7 @@ from typing import Tuple, Dict, Any, Optional
 
 import numpy as np
 
+from ._verbose import _validate_verbose
 from .parse_dopplium_header import parse_file_header
 from .parse_dopplium_raw import parse_dopplium_raw
 from .parse_dopplium_rdch import parse_dopplium_rdch
@@ -52,7 +53,7 @@ def parse_dopplium(
     start_frame: Optional[int] = None,
     cast: str = "float32",
     return_complex: bool = True,
-    verbose: bool = True
+    verbose: int = 4
 ) -> Tuple[np.ndarray, Dict[str, Any]]:
     """
     Parse a Dopplium binary file, automatically detecting the format.
@@ -84,8 +85,8 @@ def parse_dopplium(
     return_complex : bool
         Whether to return complex data
         Only used for RawData parsing
-    verbose : bool
-        Print parsing information
+    verbose : int
+        Verbosity level from 0 (nothing) to 4 (everything, default)
     
     Returns:
     --------
@@ -102,10 +103,12 @@ def parse_dopplium(
     ValueError
         If the version or message type is not supported
     """
+    verbose = _validate_verbose(verbose)
+
     # Parse file header to determine version and message type
     file_header, endian_prefix = parse_file_header(filename)
-    
-    if verbose:
+
+    if verbose >= 2:
         print(f"Detected file version: {file_header.version}, message_type: {file_header.message_type}")
     
     # Dispatch based on version and message type
@@ -127,7 +130,7 @@ def parse_dopplium(
             raise NotImplementedError("Version 2 Tracks (message_type=2) not yet implemented.")
         elif msg_type == 3:
             # RawData/ADC
-            if verbose:
+            if verbose >= 2:
                 print("Routing to RawData/ADC parser...")
             return parse_dopplium_raw(
                 filename,
@@ -152,7 +155,7 @@ def parse_dopplium(
             raise ValueError("File has unknown message_type (0). Cannot parse.")
         elif msg_type == 1:
             # ADCData
-            if verbose:
+            if verbose >= 2:
                 print("Routing to ADCData parser...")
             return parse_dopplium_raw(
                 filename,
@@ -166,7 +169,7 @@ def parse_dopplium(
             )
         elif msg_type == 2:
             # RDCMaps/RDCh
-            if verbose:
+            if verbose >= 2:
                 print("Routing to RDCMaps/RDCh parser...")
             return parse_dopplium_rdch(
                 filename,
@@ -178,6 +181,8 @@ def parse_dopplium(
             )
         elif msg_type == 3:
             # RadarCube
+            if verbose >= 2:
+                print("Routing to RadarCube parser...")
             from .parse_dopplium_radarcube import parse_dopplium_radarcube
             return parse_dopplium_radarcube(
                 filename,
@@ -191,7 +196,7 @@ def parse_dopplium(
             # Detections
             if start_frame_requested:
                 raise ValueError("start_frame is only supported for ADCData, RDCh, and RadarCube files.")
-            if verbose:
+            if verbose >= 2:
                 print("Routing to Detections parser...")
             from .parse_dopplium_detections import parse_dopplium_detections
             return parse_dopplium_detections(
@@ -205,7 +210,7 @@ def parse_dopplium(
             # Blobs
             if start_frame_requested:
                 raise ValueError("start_frame is only supported for ADCData, RDCh, and RadarCube files.")
-            if verbose:
+            if verbose >= 2:
                 print("Routing to Blobs parser...")
             from .parse_dopplium_blobs import parse_dopplium_blobs
             return parse_dopplium_blobs(
@@ -219,7 +224,7 @@ def parse_dopplium(
             # Tracks
             if start_frame_requested:
                 raise ValueError("start_frame is only supported for ADCData, RDCh, and RadarCube files.")
-            if verbose:
+            if verbose >= 2:
                 print("Routing to Tracks parser...")
             from .parse_dopplium_tracks import parse_dopplium_tracks
             return parse_dopplium_tracks(

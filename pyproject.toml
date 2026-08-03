@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dopplium-parser"
-version = "1.4.0"
+version = "1.6.0"
 description = "Parsers for Dopplium radar data formats (ADCData, RDCh, RadarCube, Detections, Blobs, Tracks)"
 readme = "README.md"
 requires-python = ">=3.7"
