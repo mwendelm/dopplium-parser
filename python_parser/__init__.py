@@ -59,7 +59,7 @@ from .parse_dopplium_blobs import (
 )
 from .parse_dopplium_header import FileHeader
 
-__version__ = "1.6.0"
+__version__ = "1.7.0"
 __all__ = [
     "parse_dopplium",
     "parse_dopplium_raw",

@@ -174,33 +174,33 @@ def plot_tracks(tracks):
     # Color map for different tracks
     colors = plt.cm.tab10(np.linspace(0, 1, len(unique_track_ids)))
     
-    # Plot 1: X-Z (top view)
+    # Plot 1: X-Y (top view: x forward, y right)
     ax = axes[0, 0]
-    for i, track_id in enumerate(unique_track_ids):
-        track_traj = valid_tracks[valid_tracks['track_id'] == track_id]
-        ax.plot(track_traj['cart_x'], track_traj['cart_z'], 'o-', 
-                color=colors[i], label=f'Track {track_id}', markersize=4)
-        # Mark start with larger circle
-        ax.plot(track_traj[0]['cart_x'], track_traj[0]['cart_z'], 
-                'o', color=colors[i], markersize=10, markerfacecolor='none', markeredgewidth=2)
-    ax.set_xlabel('X (m)')
-    ax.set_ylabel('Z (m)')
-    ax.set_title('Track Trajectories - Top View (X-Z)')
-    ax.grid(True)
-    ax.legend()
-    ax.axis('equal')
-    
-    # Plot 2: X-Y (side view)
-    ax = axes[0, 1]
     for i, track_id in enumerate(unique_track_ids):
         track_traj = valid_tracks[valid_tracks['track_id'] == track_id]
         ax.plot(track_traj['cart_x'], track_traj['cart_y'], 'o-', 
                 color=colors[i], label=f'Track {track_id}', markersize=4)
+        # Mark start with larger circle
         ax.plot(track_traj[0]['cart_x'], track_traj[0]['cart_y'], 
                 'o', color=colors[i], markersize=10, markerfacecolor='none', markeredgewidth=2)
     ax.set_xlabel('X (m)')
     ax.set_ylabel('Y (m)')
-    ax.set_title('Track Trajectories - Side View (X-Y)')
+    ax.set_title('Track Trajectories - Top View (X-Y)')
+    ax.grid(True)
+    ax.legend()
+    ax.axis('equal')
+    
+    # Plot 2: X-Z (side view: x forward, z up)
+    ax = axes[0, 1]
+    for i, track_id in enumerate(unique_track_ids):
+        track_traj = valid_tracks[valid_tracks['track_id'] == track_id]
+        ax.plot(track_traj['cart_x'], track_traj['cart_z'], 'o-', 
+                color=colors[i], label=f'Track {track_id}', markersize=4)
+        ax.plot(track_traj[0]['cart_x'], track_traj[0]['cart_z'], 
+                'o', color=colors[i], markersize=10, markerfacecolor='none', markeredgewidth=2)
+    ax.set_xlabel('X (m)')
+    ax.set_ylabel('Z (m)')
+    ax.set_title('Track Trajectories - Side View (X-Z)')
     ax.grid(True)
     ax.legend()
     

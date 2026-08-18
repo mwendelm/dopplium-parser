@@ -13,6 +13,8 @@ Format Notes:
 - Track record: 160 bytes per track
 - Track records contain position, velocity, precision in two coordinate systems
   (sensor Cartesian and ENU), plus blob metadata and lifecycle information
+- Sensor Cartesian is left-handed: x = forward (0° az, 0° el), y = right (90° az),
+  z = up (90° el)
 """
 
 from __future__ import annotations
@@ -631,10 +633,10 @@ def cartesian_to_spherical(x: float, y: float, z: float) -> Tuple[float, float, 
     """
     Convert sensor Cartesian coordinates to spherical (RAE).
     
-    Coordinate convention:
-    - x-axis: 0° azimuth, 0° elevation
-    - y-axis: 90° elevation (up)
-    - z-axis: completes right-handed system
+    Coordinate convention (left-handed):
+    - x-axis: forward (0° azimuth, 0° elevation)
+    - y-axis: right (90° azimuth)
+    - z-axis: up (90° elevation)
     
     Parameters:
     -----------
@@ -649,8 +651,8 @@ def cartesian_to_spherical(x: float, y: float, z: float) -> Tuple[float, float, 
         elevation : float (degrees)
     """
     range_m = np.sqrt(x**2 + y**2 + z**2)
-    azimuth_deg = np.arctan2(z, x) * 180.0 / np.pi
-    elevation_deg = np.arcsin(y / range_m) * 180.0 / np.pi if range_m > 0 else 0.0
+    azimuth_deg = np.arctan2(y, x) * 180.0 / np.pi
+    elevation_deg = np.arcsin(z / range_m) * 180.0 / np.pi if range_m > 0 else 0.0
     
     return range_m, azimuth_deg, elevation_deg
 
@@ -659,10 +661,10 @@ def spherical_to_cartesian(range_m: float, azimuth_deg: float, elevation_deg: fl
     """
     Convert spherical (RAE) coordinates to sensor Cartesian.
     
-    Coordinate convention:
-    - x-axis: 0° azimuth, 0° elevation
-    - y-axis: 90° elevation (up)
-    - z-axis: completes right-handed system
+    Coordinate convention (left-handed):
+    - x-axis: forward (0° azimuth, 0° elevation)
+    - y-axis: right (90° azimuth)
+    - z-axis: up (90° elevation)
     
     Parameters:
     -----------
@@ -682,8 +684,8 @@ def spherical_to_cartesian(range_m: float, azimuth_deg: float, elevation_deg: fl
     el_rad = elevation_deg * np.pi / 180.0
     
     x = range_m * np.cos(el_rad) * np.cos(az_rad)
-    y = range_m * np.sin(el_rad)
-    z = range_m * np.cos(el_rad) * np.sin(az_rad)
+    y = range_m * np.cos(el_rad) * np.sin(az_rad)
+    z = range_m * np.sin(el_rad)
     
     return x, y, z
 

@@ -793,10 +793,12 @@ for tid in unique_ids:
 
 ### Coordinate System Notes
 
-**Sensor Cartesian System:**
-- x-axis: 0° azimuth, 0° elevation (forward)
-- y-axis: 90° elevation (straight up)
-- z-axis: Completes right-handed system (azimuth sweep)
+**Sensor Cartesian System (left-handed):**
+- x-axis: forward (0° azimuth, 0° elevation)
+- y-axis: right (90° azimuth)
+- z-axis: up (90° elevation)
+
+Conversions therefore use `azimuth = atan2(y, x)` and `elevation = asin(z / range)`.
 
 **Invalid Data:**
 - Use value `-1.0` to indicate unavailable coordinates
